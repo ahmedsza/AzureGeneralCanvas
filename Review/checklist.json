@@ -1,0 +1,36 @@
+{
+  "id": "azure-well-architected",
+  "revision": "2026-10-21-r3",
+  "scoringModel": "five-pillars-v2",
+  "sections": [
+    { "n": 1, "id": "foundations", "label": "Workload foundations & governance", "short": "Foundations" },
+    { "n": 2, "id": "reliability", "label": "Reliability", "short": "Reliability" },
+    { "n": 3, "id": "security", "label": "Security", "short": "Security" },
+    { "n": 4, "id": "cost", "label": "Cost Optimization", "short": "Cost" },
+    { "n": 5, "id": "operations", "label": "Operational Excellence", "short": "Operations" },
+    { "n": 6, "id": "performance", "label": "Performance Efficiency", "short": "Performance" },
+    { "n": 7, "id": "resources", "label": "Resource-specific supplementary", "short": "Resources" },
+    { "n": 8, "id": "manual", "label": "Manual validation register", "short": "Manual" }
+  ],
+  "groups": [
+    { "prefix": "FND", "count": 13, "section": 1 },
+    { "prefix": "REL", "count": 17, "section": 2, "pillar": 2 },
+    { "prefix": "SEC", "count": 24, "section": 3, "pillar": 3 },
+    { "prefix": "CST", "count": 14, "section": 4, "pillar": 4 },
+    { "prefix": "OPS", "count": 17, "section": 5, "pillar": 5 },
+    { "prefix": "PRF", "count": 15, "section": 6, "pillar": 6 },
+    { "prefix": "APP", "count": 2, "section": 7, "pillars": [3, 2] },
+    { "prefix": "SQL", "count": 4, "section": 7, "pillars": [3, 2, 6, 6] },
+    { "prefix": "KV", "count": 2, "section": 7, "pillars": [3, 2] },
+    { "prefix": "RDS", "count": 3, "section": 7, "pillars": [5, 6, 3] },
+    { "prefix": "FD", "count": 3, "section": 7, "pillars": [5, 2, 3] },
+    { "prefix": "NET", "count": 7, "section": 7, "pillars": [6, 2, 2, 3, 6, 4, 5] },
+    { "prefix": "NAT", "count": 6, "section": 7, "pillars": [3, 2, 6, 6, 4, 5] },
+    { "prefix": "MON", "count": 7, "section": 7, "pillars": [3, 3, 3, 2, 5, 5, 5] },
+    { "prefix": "ACS", "count": 5, "section": 7, "pillars": [3, 3, 3, 2, 4] },
+    { "prefix": "DEF", "count": 6, "section": 7, "pillars": [3, 3, 3, 5, 4, 5] },
+    { "prefix": "AZSQL", "count": 20, "section": 7, "pillars": [2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6] },
+    { "prefix": "BLOB", "count": 20, "section": 7, "pillars": [2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 6] },
+    { "prefix": "MAN", "count": 12, "section": 8 }
+  ]
+}

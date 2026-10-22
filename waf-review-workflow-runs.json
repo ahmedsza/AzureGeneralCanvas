@@ -1,0 +1,29 @@
+{
+  "currentRunId": "run-20261008123138631-uqu4k4pm",
+  "runs": [
+    {
+      "runId": "run-20261008123138631-uqu4k4pm",
+      "name": "",
+      "source": "collect",
+      "createdAt": "2026-10-08T12:31:38.633Z",
+      "updatedAt": "2026-10-08T12:31:38.671Z",
+      "input": {
+        "evidenceDir": null,
+        "reportDir": null,
+        "resourceGroup": "",
+        "subscription": "",
+        "mode": "manual",
+        "environment": "",
+        "rto": "",
+        "rpo": "",
+        "deckMode": "executive",
+        "renderChanged": false,
+        "manualValidationEnabled": false
+      },
+      "outputs": {},
+      "logs": [],
+      "subscriptions": [],
+      "resourceGroups": []
+    }
+  ]
+}
