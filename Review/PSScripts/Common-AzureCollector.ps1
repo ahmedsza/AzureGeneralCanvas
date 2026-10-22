@@ -27,12 +27,85 @@ function ConvertTo-CollectorSafeFileName {
     return ($Text -replace '[^A-Za-z0-9._-]', '-')
 }
 
+function Invoke-AzCliProcess {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [ValidateRange(1, 3600)][int]$TimeoutSeconds = 120,
+        [string]$Label = 'Azure CLI'
+    )
+
+    $az = Get-Command az -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    $payload = @{ executable = $az.Source; arguments = $Arguments } | ConvertTo-Json -Compress
+    $encodedPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+    # A PowerShell worker handles both az.cmd and native launchers without constructing a cmd.exe command line.
+    $worker = @'
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
+try {
+    $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
+    $cliArguments = [string[]]$payload.arguments
+    & $payload.executable @cliArguments
+    exit $LASTEXITCODE
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
+'@.Replace('__PAYLOAD__', $encodedPayload)
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = Join-Path $PSHOME $(if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' })
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.Environment['AZURE_EXTENSION_USE_DYNAMIC_INSTALL'] = 'no'
+    foreach ($argument in @('-NoProfile', '-NonInteractive', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($worker)))) {
+        $start.ArgumentList.Add($argument)
+    }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    $started = $false
+    try {
+        $started = $process.Start()
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $exited = $false
+        while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+            $remaining = [Math]::Max(1, [int]($TimeoutSeconds * 1000 - $clock.Elapsed.TotalMilliseconds))
+            if ($process.WaitForExit([Math]::Min(15000, $remaining))) { $exited = $true; break }
+            if ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+                Write-CollectorMessage -Message ('Still waiting for {0} ({1}s; limit {2}s)' -f $Label, [int]$clock.Elapsed.TotalSeconds, $TimeoutSeconds)
+            }
+        }
+        if (-not $exited) {
+            $process.Kill($true)
+            if (-not $process.WaitForExit(5000)) { throw "Unable to terminate timed-out Azure CLI process $($process.Id)." }
+            return [pscustomobject]@{ stdout = ''; stderr = "Azure CLI exceeded the $TimeoutSeconds-second command timeout and was terminated."; exitCode = 124; timedOut = $true }
+        }
+        # Bound pipe draining as well: a descendant must not hold the caller open after the launcher exits.
+        $remaining = [Math]::Max(1, [int]($TimeoutSeconds * 1000 - $clock.Elapsed.TotalMilliseconds))
+        if (-not [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), $remaining)) {
+            return [pscustomobject]@{ stdout = ''; stderr = "Azure CLI output did not close within the $TimeoutSeconds-second command timeout."; exitCode = 124; timedOut = $true }
+        }
+        return [pscustomobject]@{ stdout = $stdout.GetAwaiter().GetResult(); stderr = $stderr.GetAwaiter().GetResult(); exitCode = $process.ExitCode; timedOut = $false }
+    } finally {
+        if ($started -and -not $process.HasExited) {
+            $process.Kill($true)
+            if (-not $process.WaitForExit(5000)) { Write-CollectorMessage -Level 'ERROR' -Message "Azure CLI process $($process.Id) did not stop after termination." }
+        }
+        $process.Dispose()
+    }
+}
+
 function Invoke-AzCommandJson {
     param(
         [Parameter(Mandatory = $true)][string]$Label,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [string]$Subscription,
-        [switch]$Required
+        [switch]$Required,
+        [ValidateRange(1, 3600)][int]$TimeoutSeconds = 120
     )
 
     $fullArguments = [System.Collections.Generic.List[string]]::new()
@@ -49,25 +122,21 @@ function Invoke-AzCommandJson {
         if ($argument -match '\s') { '"{0}"' -f $argument.Replace('"', '\"') } else { $argument }
     }
     Write-CollectorMessage -Message ('Collecting {0}' -f $Label)
-    $stderrFile = New-TemporaryFile
-    try {
-        $raw = & az @fullArguments 2> $stderrFile
-        $exitCode = $LASTEXITCODE
-        $stderrContent = Get-Content -Path $stderrFile -Raw -ErrorAction SilentlyContinue
-        $stderrText = if ($null -eq $stderrContent) { '' } else { $stderrContent.Trim() }
-    }
-    finally {
-        Remove-Item -Path $stderrFile -Force -ErrorAction SilentlyContinue
-    }
-    $rawText = (($raw | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine).Trim()
+    $execution = Invoke-AzCliProcess -Arguments $fullArguments.ToArray() -TimeoutSeconds $TimeoutSeconds -Label $Label
+    $exitCode = $execution.exitCode
+    $stderrText = $execution.stderr.Trim()
+    $rawText = $execution.stdout.Trim()
     $resultText = if ($exitCode -eq 0 -or $rawText) { $rawText } else { $stderrText }
     $data = $null
-    if ($resultText) {
+    if ($resultText -and -not $execution.timedOut) {
         try { $data = $resultText | ConvertFrom-Json -Depth 100 }
         catch { $data = $resultText }
     }
     $success = $exitCode -eq 0
     $errorText = if ($success) { $null } elseif ($stderrText) { $stderrText } else { $rawText }
+    if ($execution.timedOut) {
+        Write-CollectorMessage -Level 'WARN' -Message ('Timed out collecting {0} after {1}s; continuing with a collection gap.' -f $Label, $TimeoutSeconds)
+    }
     if ($Required -and -not $success) {
         throw ('Required command failed for {0}: {1}' -f $Label, $errorText)
     }

@@ -6,12 +6,15 @@ Discovers resources in an Azure resource group and collects service-specific con
 param(
     [Parameter(Mandatory = $true)][string]$ResourceGroup,
     [string]$OutputDirectory = (Join-Path (Get-Location).Path ('azure-data-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))),
-    [string]$Subscription
+    [string]$Subscription,
+    [ValidateRange(1, 3600)][int]$CommandTimeoutSeconds = 120
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'Common-AzureCollector.ps1')
+$PSDefaultParameterValues = @{} + $PSDefaultParameterValues
+$PSDefaultParameterValues['Invoke-AzCommandJson:TimeoutSeconds'] = $CommandTimeoutSeconds
 Test-AzCliPrerequisites
 
 if (-not $Subscription) {
